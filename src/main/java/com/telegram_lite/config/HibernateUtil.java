@@ -15,6 +15,7 @@ public class HibernateUtil {
             Configuration configuration = new Configuration().configure(); // Mặc định sẽ tìm file hibernate.cfg.xml
 
             configuration.addAnnotatedClass(com.telegram_lite.entity.User.class);
+            configuration.addAnnotatedClass(com.telegram_lite.entity.Message.class);
 
             // Hibernate 5.x trở lên yêu cầu ServiceRegistry
             // Chúng ta sẽ đăng ký các Entity ở đây sau khi tạo chúng
@@ -24,6 +25,8 @@ public class HibernateUtil {
                     .applySettings(configuration.getProperties()).build();
 
             sessionFactory = configuration.buildSessionFactory(serviceRegistry);
+            System.out.println("Hibernate SessionFactory created successfully and entities registered."); // Thêm log này
+
 
         } catch (Throwable ex) {
             // Ghi lại lỗi. Vì đây là lỗi nghiêm trọng khi khởi tạo SessionFactory.
