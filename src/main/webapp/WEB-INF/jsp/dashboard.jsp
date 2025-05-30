@@ -261,6 +261,7 @@
 
             <script type="text/javascript">
                 const loggedInUsername = "<c:out value='${loggedInUsername}'/>";
+                const CONTEXT_PATH = "<c:out value='${pageContext.request.contextPath}'/>";
                 if (!loggedInUsername) {
                     console.error("Logged in username not found.");
                     // Redirect or show error
@@ -603,6 +604,102 @@
                     msgWrapper.appendChild(messageElement);
                     messagesDiv.appendChild(msgWrapper);
                     messagesDiv.scrollTop = messagesDiv.scrollHeight; // Tự động cuộn xuống cuối
+                }
+
+                function selectChatPartner(username) {
+                    if (currentChatTargetUsername === username) return;
+
+                    currentChatTargetUsername = username;
+                    currentChatPartnerSpan.textContent = username;
+                    messagesDiv.innerHTML = ''; // Xóa tin nhắn của cuộc chat cũ
+                    messageInput.disabled = false;
+                    sendButton.disabled = false;
+                    uploadButton.disabled = false;
+
+
+                    document.querySelectorAll('#user-list li').forEach(li => {
+                        if (li.dataset.username === username) {
+                            li.classList.add('active-chat');
+                        } else {
+                            li.classList.remove('active-chat');
+                        }
+                    });
+
+                    appendSystemMessage(`Opening chat with ${username}...`);
+                    // Gọi hàm tải lịch sử chat
+                    loadChatHistory(username);
+                }
+
+
+
+
+                async function loadChatHistory(partnerUsername) {
+                    if (!loggedInUsername || !partnerUsername) {
+                        console.log("loadChatHistory: Missing loggedInUsername or partnerUsername");
+                        return;
+                    }
+                    if (CONTEXT_PATH === null || typeof CONTEXT_PATH === 'undefined') { // Kiểm tra lại
+                        console.error("loadChatHistory: CONTEXT_PATH is not available!");
+                        appendSystemMessage("Error: Application context path not found for history request.");
+                        return;
+                    }
+
+
+                    const page = 0;
+                    const pageSize = 20;
+                    appendSystemMessage(`Loading history with ${partnerUsername}...`);
+
+                    try {
+                        console.log("ConTEXT_PATH:", CONTEXT_PATH); // Log CONTEXT_PATH để kiểm tra
+                        console.log("Logged in username:", loggedInUsername);
+                        console.log("Partner username:", partnerUsername);
+                        console.log("Page:", page, "Page size:", pageSize);
+                        const params = new URLSearchParams({
+                            partnerUsername: partnerUsername,
+                            page: page,
+                            pageSize: pageSize
+                        });
+                        console.log("typeof CONTEXT_PATH:", typeof CONTEXT_PATH);
+                        console.log("CONTEXT_PATH actual value:", CONTEXT_PATH);
+
+                        console.log("Query parameters for history request:", params.toString());
+                        const historyUrl = CONTEXT_PATH + "/chatHistory?" + params.toString();
+                        console.log("Requesting chat history from:", historyUrl); // Log URL sẽ gọi
+                        const response = await fetch(historyUrl);
+                        // -----------------------------------------------
+
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({ message: "Failed to load chat history. Status: " + response.status }));
+                            console.error("Error loading chat history:", errorData);
+                            appendSystemMessage(`Error loading history: ${errorData.message || errorData.error || 'Unknown error'}`);
+                            return;
+                        }
+
+                        const historyMessages = await response.json();
+                        console.log("Chat history received:", historyMessages);
+
+                        if (historyMessages && historyMessages.length > 0) {
+                            historyMessages.reverse().forEach(msgData => {
+                                const clientMsgData = {
+                                    id: msgData.id,
+                                    from: msgData.sender.username,
+                                    to: msgData.receiver.username,
+                                    messageType: msgData.messageType.toString(),
+                                    content: msgData.content,
+                                    mediaUrl: msgData.mediaUrl,
+                                    timestamp: msgData.timestamp
+                                };
+                                appendChatMessage(clientMsgData);
+                            });
+                            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        } else {
+                            appendSystemMessage(`No chat history with ${partnerUsername}.`);
+                        }
+
+                    } catch (error) {
+                        console.error("Failed to fetch chat history:", error);
+                        appendSystemMessage("Could not load chat history. Network error or server issue.");
+                    }
                 }
 
             </script>
