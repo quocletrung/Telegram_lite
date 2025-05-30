@@ -32,6 +32,8 @@ public class ChatHistoryServlet extends HttpServlet {
         this.objectMapper = new ObjectMapper();
         // Đăng ký module để ObjectMapper có thể serialize/deserialize Java 8 Time (LocalDateTime)
         this.objectMapper.registerModule(new JavaTimeModule());
+        this.objectMapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
         // Cấu hình để không ném lỗi nếu có thuộc tính không xác định trong JSON (ít quan trọng khi serialize)
         // this.objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // Cấu hình định dạng ngày giờ nếu muốn nhất quán (server đã làm khi gửi qua WS)
