@@ -126,7 +126,7 @@
 
                 .message .timestamp {
                     font-size: 0.7em;
-                    color: #777;
+                    color: black;
                     display: block;
                     margin-top: 4px;
                     text-align: right;
@@ -238,6 +238,7 @@
 
             <div class="chat-container">
                 <div id="user-list-container">
+
                     <h3>Online Users</h3>
                     <ul id="user-list">
                         <%-- User list populated by JavaScript --%>

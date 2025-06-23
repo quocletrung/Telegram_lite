@@ -4,8 +4,12 @@ import com.telegram_lite.dao.UserDao;
 import com.telegram_lite.dao.UserDaoImpl; // Sử dụng implementation cụ thể
 import com.telegram_lite.entity.User;
 import org.mindrot.jbcrypt.BCrypt; // Import thư viện BCrypt
+import com.telegram_lite.dto.UserDto;
 
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 import java.util.Optional;
+import java.util.List;
 
 public class UserService {
 
@@ -119,4 +123,25 @@ public class UserService {
     // - updateUserProfile(User user)
     // - changePassword(Long userId, String oldPassword, String newPassword)
     // - deactivateUser(Long userId)
+    public List<UserDto> searchUserDtos(String searchTerm, String excludeUsername) {
+        if (searchTerm == null || searchTerm.trim().isEmpty()) {
+            return new ArrayList<>(); // Không tìm kiếm nếu searchTerm rỗng, trả về danh sách trống
+        }
+
+        // Gọi phương thức searchUsers hiệu quả từ DAO
+        List<User> foundUsers = userDao.searchUsers(searchTerm.trim(), excludeUsername);
+
+        // Chuyển đổi List<User> thành List<UserDto> để trả về client
+        return foundUsers.stream()
+                .map(user -> new UserDto(user.getUsername(), user.getDisplayName()))
+                .collect(Collectors.toList());
+    }
+
+    // Bạn vẫn có thể giữ lại phương thức getAllUserDtos nếu cần
+    public List<UserDto> getAllUserDtos(String excludeUsername) {
+        return userDao.findAllUsers().stream()
+                .filter(user -> !user.getUsername().equals(excludeUsername))
+                .map(user -> new UserDto(user.getUsername(), user.getDisplayName()))
+                .collect(Collectors.toList());
+    }
 }

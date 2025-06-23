@@ -6,6 +6,7 @@ import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.query.Query;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -108,6 +109,27 @@ public class UserDaoImpl implements UserDao {
         } catch (Exception e) {
             e.printStackTrace();
             return List.of();
+        }
+    }
+    @Override
+    public List<User> searchUsers(String searchTerm, String usernameToExclude) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            // Sử dụng HQL với LIKE để tìm kiếm gần đúng, không phân biệt hoa thường
+            // và loại trừ người dùng hiện tại
+            String hql = "FROM User u WHERE " +
+                    "(LOWER(u.username) LIKE :term OR LOWER(u.displayName) LIKE :term) " +
+                    "AND u.username != :excludeUsername";
+
+            Query<User> query = session.createQuery(hql, User.class);
+
+            // Thêm dấu % vào searchTerm để tìm kiếm gần đúng
+            query.setParameter("term", "%" + searchTerm.toLowerCase() + "%");
+            query.setParameter("excludeUsername", usernameToExclude);
+
+            return query.list();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ArrayList<>(); // Trả về danh sách rỗng nếu có lỗi
         }
     }
 }

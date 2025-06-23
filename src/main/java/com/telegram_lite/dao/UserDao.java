@@ -19,4 +19,7 @@ public interface UserDao {
     Optional<User> findUserByEmail(String email);
 
     List<User> findAllUsers();
+
+    List<User> searchUsers(String searchTerm, String usernameToExclude);
+
 }
