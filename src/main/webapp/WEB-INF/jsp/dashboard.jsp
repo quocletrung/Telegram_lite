@@ -224,6 +224,84 @@
                     background-color: #ccc;
                     cursor: not-allowed;
                 }
+
+                /* Thêm style cho video call */
+                #videoContainer {
+                    display: none;
+                    flex-direction: row;
+                    gap: 10px;
+                    margin-bottom: 10px;
+                }
+
+                #localVideo,
+                #remoteVideo {
+                    width: 200px;
+                    border-radius: 10px;
+                    background: #000;
+                }
+
+                #endCallButton {
+                    height: 40px;
+                    align-self: center;
+                    background: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 20px;
+                    margin-left: 10px;
+                }
+
+                /* Style cho popup cuộc gọi đến */
+                #callPopup {
+                    display: none;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    background: rgba(0, 0, 0, 0.4);
+                    z-index: 1000;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                #callPopup > div {
+                    background: white;
+                    border-radius: 10px;
+                    padding: 30px 40px;
+                    box-shadow: 0 2px 16px #0003;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+
+                #callStatusText {
+                    font-size: 1.2em;
+                    margin-bottom: 20px;
+                }
+
+                #callPopup button {
+                    background: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 50%;
+                    width: 60px;
+                    height: 60px;
+                    font-size: 2em;
+                    cursor: pointer;
+                    margin: 0 10px;
+                }
+
+                #callPopup button:hover {
+                    background: #0056b3;
+                }
+
+                #callPopup #declineCallButton {
+                    background: #dc3545;
+                }
+
+                #callPopup #declineCallButton:hover {
+                    background: #c82333;
+                }
             </style>
         </head>
 
@@ -252,10 +330,28 @@
                         <%-- Messages appended here --%>
                     </div>
                     <div class="input-area">
-                        <input type="file" id="fileInput" accept="image/*,video/*"> <%-- Thêm accept filter --%>
-                            <button id="uploadButton" title="Send file">&#128206;</button> <input type="text"
-                                id="messageInput" placeholder="Type a message..." autocomplete="off" disabled>
-                            <button id="sendButton" disabled>Send</button>
+                        <input type="file" id="fileInput" accept="image/*,video/*">
+                        <button id="uploadButton" title="Send file">&#128206;</button>
+                        <button id="videoCallButton" title="Video Call">&#128249;</button>
+                        <input type="text" id="messageInput" placeholder="Type a message..." autocomplete="off" disabled>
+                        <button id="sendButton" disabled>Send</button>
+                    </div>
+                </div>
+            </div>
+            <div id="videoContainer" style="display:none; flex-direction:row; gap:10px; margin-bottom:10px;">
+                <video id="localVideo" autoplay muted playsinline style="width:200px; border-radius:10px; background:#000;"></video>
+                <video id="remoteVideo" autoplay playsinline style="width:200px; border-radius:10px; background:#000;"></video>
+                <button id="endCallButton" style="height:40px; align-self:center; background:#dc3545; color:white; border:none; border-radius:20px; margin-left:10px;">End</button>
+            </div>
+
+            <!-- Popup cho cuộc gọi đến -->
+            <div id="callPopup" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.4); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:white; border-radius:10px; padding:30px 40px; box-shadow:0 2px 16px #0003; display:flex; flex-direction:column; align-items:center;">
+                    <div id="callStatusText" style="font-size:1.2em; margin-bottom:20px;">Incoming video call...</div>
+                    <audio id="ringtone" src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae5b2.mp3" loop></audio>
+                    <div style="display:flex; gap:20px;">
+                        <button id="acceptCallButton" style="background:#28a745; color:white; border:none; border-radius:50%; width:60px; height:60px; font-size:2em;">&#128222;</button>
+                        <button id="declineCallButton" style="background:#dc3545; color:white; border:none; border-radius:50%; width:60px; height:60px; font-size:2em;">&#10060;</button>
                     </div>
                 </div>
             </div>
@@ -276,6 +372,22 @@
                 const chatHeaderDiv = document.getElementById('chat-header');
                 const fileInput = document.getElementById('fileInput');
                 const uploadButton = document.getElementById('uploadButton');
+                const videoCallButton = document.getElementById('videoCallButton');
+                const videoContainer = document.getElementById('videoContainer');
+                const localVideo = document.getElementById('localVideo');
+                const remoteVideo = document.getElementById('remoteVideo');
+                const endCallButton = document.getElementById('endCallButton');
+
+                // Thêm các biến cho popup cuộc gọi
+                const callPopup = document.getElementById('callPopup');
+                const callStatusText = document.getElementById('callStatusText');
+                const ringtone = document.getElementById('ringtone');
+                const acceptCallButton = document.getElementById('acceptCallButton');
+                const declineCallButton = document.getElementById('declineCallButton');
+
+                let localStream = null;
+                let peerConnection = null;
+                const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
                 const wsProtocol = document.location.protocol === "https:" ? "wss:" : "ws:";
 
@@ -341,6 +453,15 @@
                             } else if (messageData.type === "error") {
                                 console.error("Server error message:", messageData.message);
                                 appendSystemMessage("Server error: " + messageData.message);
+                            } else if (messageData.type === "videoOffer" && messageData.from === currentChatTargetUsername) {
+                                handleVideoOffer(messageData);
+                            } else if (messageData.type === "videoAnswer" && peerConnection) {
+                                peerConnection.setRemoteDescription(new RTCSessionDescription(messageData.answer));
+                            } else if (messageData.type === "iceCandidate" && peerConnection) {
+                                peerConnection.addIceCandidate(new RTCIceCandidate(messageData.candidate));
+                            } else if (messageData.type === "endCall") {
+                                endVideoCall();
+                                appendSystemMessage("Video call ended.");
                             } else {
                                 console.warn("Received unhandled message type or format:", messageData);
                                 // appendSystemMessage(rawMessageData); // Hiển thị nguyên văn nếu không xử lý được
@@ -426,74 +547,123 @@
                         appendSystemMessage("Please select a user to chat with before sending a file.");
                         return;
                     }
-                    fileInput.click(); // Mở hộp thoại chọn file
+                    fileInput.click();
                 };
 
                 fileInput.onchange = function (event) {
                     const file = event.target.files[0];
                     if (file && currentChatTargetUsername) {
-                        const caption = messageInput.value.trim(); // Lấy caption từ ô message input
+                        const caption = messageInput.value.trim();
                         uploadAndSendFile(file, caption, currentChatTargetUsername);
-                        fileInput.value = null; // Reset file input để có thể chọn lại cùng file
-                        // messageInput.value = ''; // Xóa caption sau khi đã lấy (tùy chọn)
-                    } else if (!currentChatTargetUsername && file) {
-                        appendSystemMessage("Please select a user to chat with before sending a file.");
                         fileInput.value = null;
                     }
-                    // Nếu không có file được chọn (người dùng nhấn cancel), không làm gì cả.
                 };
 
-                async function uploadAndSendFile(file, caption, recipientUsername) {
-                    if (!socket || socket.readyState !== WebSocket.OPEN) {
-                        appendSystemMessage("Not connected to server. Cannot send file.");
+                videoCallButton.onclick = async function () {
+                    if (!currentChatTargetUsername) {
+                        appendSystemMessage("Please select a user to call.");
                         return;
                     }
+                    await startVideoCall(currentChatTargetUsername);
+                };
 
-                    appendSystemMessage(`Uploading ${file.name}...`); // Thông báo đang upload
+                endCallButton.onclick = function () {
+                    endVideoCall();
+                    if (socket && currentChatTargetUsername) {
+                        socket.send(JSON.stringify({ type: "endCall", to: currentChatTargetUsername }));
+                    }
+                };
 
-                    const formData = new FormData();
-                    formData.append("fileToUpload", file); // "fileToUpload" phải khớp với request.getPart("fileToUpload") trong Servlet
+                // Hàm hiển thị popup cuộc gọi đến
+                function showCallPopup(statusText) {
+                    callStatusText.textContent = statusText;
+                    callPopup.style.display = 'flex';
+                    ringtone.currentTime = 0;
+                    ringtone.play();
+                }
 
-                    try {
-                        const response = await fetch("${pageContext.request.contextPath}/uploadFile", {
-                            method: 'POST',
-                            body: formData
-                            // Không cần set Content-Type header, trình duyệt sẽ tự động làm với FormData
-                        });
+                // Hàm ẩn popup cuộc gọi
+                function hideCallPopup() {
+                    callPopup.style.display = 'none';
+                    ringtone.pause();
+                    ringtone.currentTime = 0;
+                }
 
-                        const result = await response.json(); // Đọc response dưới dạng JSON
-
-                        if (response.ok && result.success) {
-                            const mediaUrl = result.fileUrl;
-                            let messageType = "FILE"; // Mặc định
-
-                            if (file.type.startsWith("image/")) {
-                                messageType = "IMAGE";
-                            } else if (file.type.startsWith("video/")) {
-                                messageType = "VIDEO";
-                            }
-                            // Bạn có thể thêm các loại file khác ở đây
-
-                            const messageObject = {
-                                to: recipientUsername,
-                                messageType: messageType,
-                                mediaUrl: mediaUrl,
-                                content: caption // Caption có thể rỗng
-                            };
-                            socket.send(JSON.stringify(messageObject));
-                            appendSystemMessage(`${file.name} sent successfully.`);
-                            if (caption) messageInput.value = ''; // Xóa caption nếu nó đã được gửi
-
-                        } else {
-                            console.error("File upload failed on server:", result.message);
-                            appendSystemMessage(`Failed to upload ${file.name}: ${result.message || 'Server error'}`);
+                async function startVideoCall(target, isAnswer, remoteOffer) {
+                    videoContainer.style.display = "flex";
+                    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    localVideo.srcObject = localStream;
+                    peerConnection = new RTCPeerConnection(rtcConfig);
+                    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                    peerConnection.onicecandidate = event => {
+                        if (event.candidate) {
+                            socket.send(JSON.stringify({
+                                type: "iceCandidate",
+                                to: target,
+                                candidate: event.candidate
+                            }));
                         }
-                    } catch (error) {
-                        console.error("Error during file upload:", error);
-                        appendSystemMessage(`Error uploading ${file.name}: ${error.message}`);
+                    };
+                    peerConnection.ontrack = event => {
+                        remoteVideo.srcObject = event.streams[0];
+                    };
+                    if (isAnswer && remoteOffer) {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(remoteOffer));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        socket.send(JSON.stringify({
+                            type: "videoAnswer",
+                            to: target,
+                            answer: answer
+                        }));
+                    } else {
+                        const offer = await peerConnection.createOffer();
+                        await peerConnection.setLocalDescription(offer);
+                        socket.send(JSON.stringify({
+                            type: "videoOffer",
+                            to: target,
+                            offer: offer
+                        }));
+                        showCallPopup(`Calling ${target}...`);
+                        declineCallButton.onclick = function() {
+                            hideCallPopup();
+                            endVideoCall();
+                            socket.send(JSON.stringify({ type: "endCall", to: target }));
+                        };
+                        acceptCallButton.onclick = null;
                     }
                 }
 
+                // Bổ sung vào socket.onmessage:
+                const oldOnMessage = socket.onmessage;
+                socket.onmessage = function (event) {
+                    if (typeof oldOnMessage === 'function') oldOnMessage(event);
+                    try {
+                        const messageData = JSON.parse(event.data);
+                        if (messageData.type === "videoOffer" && messageData.from === currentChatTargetUsername) {
+                            handleVideoOffer(messageData);
+                        } else if (messageData.type === "videoAnswer" && peerConnection) {
+                            peerConnection.setRemoteDescription(new RTCSessionDescription(messageData.answer));
+                        } else if (messageData.type === "iceCandidate" && peerConnection) {
+                            peerConnection.addIceCandidate(new RTCIceCandidate(messageData.candidate));
+                        } else if (messageData.type === "endCall") {
+                            endVideoCall();
+                            appendSystemMessage("Video call ended.");
+                        }
+                    } catch (e) {}
+                };
+
+                async function handleVideoOffer(messageData) {
+                    showCallPopup(`Incoming video call from ${messageData.from}`);
+                    acceptCallButton.onclick = async function() {
+                        hideCallPopup();
+                        await startVideoCall(messageData.from, true, messageData.offer);
+                    };
+                    declineCallButton.onclick = function() {
+                        hideCallPopup();
+                        socket.send(JSON.stringify({ type: "endCall", to: messageData.from }));
+                    };
+                }
 
                 function sendTextMessage() {
                     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -552,7 +722,7 @@
                     } else if (msgData.messageType === "IMAGE" && msgData.mediaUrl) {
                         const img = document.createElement('img');
                         img.src = msgData.mediaUrl;
-                        img.style.maxWidth = '100%'; // Hoặc kích thước cụ thể
+                        img.style.maxWidth = '200px';
                         img.style.borderRadius = '10px';
                         img.alt = msgData.content || "Image"; // Caption hoặc text thay thế
                         messageElement.appendChild(img);
@@ -567,7 +737,7 @@
                         const video = document.createElement('video');
                         video.src = msgData.mediaUrl;
                         video.controls = true;
-                        video.style.maxWidth = '100%';
+                        video.style.maxWidth = '200px';
                         video.style.borderRadius = '10px';
                         messageElement.appendChild(video);
                         if (msgData.content) { // Hiển thị caption nếu có
@@ -577,6 +747,12 @@
                             caption.textContent = msgData.content;
                             messageElement.appendChild(caption);
                         }
+                    } else if (msgData.messageType === "FILE") {
+                        const link = document.createElement('a');
+                        link.href = msgData.mediaUrl;
+                        link.textContent = msgData.content || "Download file";
+                        link.target = "_blank";
+                        messageElement.appendChild(link);
                     } else {
                         messageElement.textContent = msgData.content || "[Unsupported message type]";
                     }
