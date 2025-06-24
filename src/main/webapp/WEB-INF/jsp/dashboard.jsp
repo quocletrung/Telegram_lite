@@ -577,6 +577,12 @@
                             caption.textContent = msgData.content;
                             messageElement.appendChild(caption);
                         }
+                    } else if (msgData.messageType === "FILE" && msgData.mediaUrl) {
+                        const link = document.createElement('a');
+                        link.href = msgData.mediaUrl;
+                        link.textContent = msgData.content || "Download file";
+                        link.target = "_blank";
+                        messageElement.appendChild(link);
                     } else {
                         messageElement.textContent = msgData.content || "[Unsupported message type]";
                     }
