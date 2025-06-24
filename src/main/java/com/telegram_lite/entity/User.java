@@ -34,8 +34,9 @@ public class User {
     @Column(name = "avatar_url", nullable = true)
     private String avatarUrl; // Đường dẫn tới ảnh đại diện
 
-    @Column(name = "status", length = 20)
-    private String status; // Ví dụ: ONLINE, OFFLINE, BUSY
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status")
+    private UserStatus status;
 
     @CreationTimestamp // Tự động gán thời gian khi tạo mới
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -116,11 +117,11 @@ public class User {
         this.avatarUrl = avatarUrl;
     }
 
-    public String getStatus() {
+    public UserStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(UserStatus status) {
         this.status = status;
     }
 

@@ -47,9 +47,7 @@ public class UserListServlet extends HttpServlet {
         if (searchTerm != null && !searchTerm.trim().isEmpty()) {
             users = userService.searchUserDtos(searchTerm.trim(), loggedInUsername);
         } else {
-            // Có thể trả về danh sách rỗng hoặc danh sách liên hệ gần đây
-            // Tạm thời trả về danh sách rỗng nếu không có từ khóa tìm kiếm
-            users = new ArrayList<>();
+            users = userService.getAllUserDtos(loggedInUsername);
         }
 
         response.setContentType("application/json");

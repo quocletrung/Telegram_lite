@@ -87,6 +87,29 @@
                     color: white;
                 }
 
+                #user-list li.user-online {
+                    color: #28a745;
+                    font-weight: bold;
+                }
+                #user-list li.user-offline {
+                    color: #888;
+                    font-style: italic;
+                }
+                .status-dot {
+                    display: inline-block;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 50%;
+                    margin-right: 8px;
+                    background-color: #888;
+                }
+                .user-online .status-dot {
+                    background-color: #28a745;
+                }
+                .user-offline .status-dot {
+                    background-color: #888;
+                }
+
                 #chat-area {
                     flex-grow: 1;
                     display: flex;
@@ -295,7 +318,7 @@
                 const part1 = wsProtocol + "//";
                 const part2 = hostFromServer;
                 const part3 = contextPathFromJSP;
-                const part4 = "/chat/";
+                const part4 = "/chat?username=";
                 const part5 = loggedInUsernameForJS;
 
                 const wsUrl = part1 + part2 + part3 + part4 + part5;
@@ -315,6 +338,7 @@
                     socket.onopen = function (event) {
                         console.log("WebSocket connection established to: " + wsUrl);
                         appendSystemMessage("Connected to chat server.");
+                        fetchUsers(); // Gọi lấy danh sách user khi kết nối thành công
                     };
 
                     socket.onmessage = function (event) {
@@ -366,37 +390,43 @@
                 connect(); // Khởi tạo kết nối
 
                 function updateUserList(users) {
-                    userListUl.innerHTML = ''; // Xóa danh sách cũ
-                    users.forEach(function (user) {
-                        if (user === loggedInUsername) return; // Không hiển thị chính mình trong danh sách chat
+                    console.log("updateUserList called with users:", users); // Thêm dòng này để debug
 
-                        const listItem = document.createElement('li');
-                        listItem.textContent = user;
-                        listItem.dataset.username = user; // Lưu username vào data attribute
-
-                        if (user === currentChatTargetUsername) {
-                            listItem.classList.add('active-chat');
+                    userListUl.innerHTML = '';
+                    users.forEach(user => {
+                        const li = document.createElement('li');
+                        li.dataset.username = user.username;
+                        // Thêm class theo trạng thái
+                        if (user.status === 'ONLINE') {
+                            li.classList.add('user-online');
+                        } else {
+                            li.classList.add('user-offline');
                         }
-
-                        listItem.onclick = function () {
-                            selectChatPartner(user);
-                        };
-                        userListUl.appendChild(listItem);
+                        // Thêm chấm tròn trạng thái
+                        const statusDot = document.createElement('span');
+                        statusDot.className = 'status-dot';
+                        li.appendChild(statusDot);
+                        // Thêm tên user
+                        li.appendChild(document.createTextNode(user.username));
+                        li.onclick = () => selectChatPartner(user.username);
+                        if (currentChatTargetUsername === user.username) {
+                            li.classList.add('active-chat');
+                        }
+                        userListUl.appendChild(li);
                     });
                 }
 
                 function selectChatPartner(username) {
-                    if (currentChatTargetUsername === username) return; // Đã chọn rồi
+                    if (currentChatTargetUsername === username) return;
 
                     currentChatTargetUsername = username;
                     currentChatPartnerSpan.textContent = username;
                     messagesDiv.innerHTML = ''; // Xóa tin nhắn của cuộc chat cũ
-                    messageInput.disabled = false; // Bật ô nhập liệu
-                    sendButton.disabled = false;   // Bật nút gửi
-                    uploadButton.disabled = false; // Bật nút upload (sẽ thêm sau)
+                    messageInput.disabled = false;
+                    sendButton.disabled = false;
+                    uploadButton.disabled = false;
 
 
-                    // Highlight người dùng đang được chọn trong danh sách
                     document.querySelectorAll('#user-list li').forEach(li => {
                         if (li.dataset.username === username) {
                             li.classList.add('active-chat');
@@ -405,9 +435,9 @@
                         }
                     });
 
-                    // TODO SAU: Gọi hàm tải lịch sử chat cho (loggedInUsername, currentChatTargetUsername)
-                    // loadChatHistory(loggedInUsername, currentChatTargetUsername);
-                    appendSystemMessage(`Chatting with ${username}`);
+                    appendSystemMessage(`Opening chat with ${username}...`);
+                    // Gọi hàm tải lịch sử chat
+                    loadChatHistory(username);
                 }
 
                 sendButton.onclick = function () {
@@ -607,33 +637,6 @@
                     messagesDiv.scrollTop = messagesDiv.scrollHeight; // Tự động cuộn xuống cuối
                 }
 
-                function selectChatPartner(username) {
-                    if (currentChatTargetUsername === username) return;
-
-                    currentChatTargetUsername = username;
-                    currentChatPartnerSpan.textContent = username;
-                    messagesDiv.innerHTML = ''; // Xóa tin nhắn của cuộc chat cũ
-                    messageInput.disabled = false;
-                    sendButton.disabled = false;
-                    uploadButton.disabled = false;
-
-
-                    document.querySelectorAll('#user-list li').forEach(li => {
-                        if (li.dataset.username === username) {
-                            li.classList.add('active-chat');
-                        } else {
-                            li.classList.remove('active-chat');
-                        }
-                    });
-
-                    appendSystemMessage(`Opening chat with ${username}...`);
-                    // Gọi hàm tải lịch sử chat
-                    loadChatHistory(username);
-                }
-
-
-
-
                 async function loadChatHistory(partnerUsername) {
                     if (!loggedInUsername || !partnerUsername) {
                         console.log("loadChatHistory: Missing loggedInUsername or partnerUsername");
@@ -702,6 +705,21 @@
                         appendSystemMessage("Could not load chat history. Network error or server issue.");
                     }
                 }
+
+                function fetchUsers() {
+                    fetch(CONTEXT_PATH + '/users')
+                        .then(response => response.json())
+                        .then(users => {
+                            updateUserList(users);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching users:', error);
+                        });
+                }
+
+                document.addEventListener('DOMContentLoaded', function() {
+                    fetchUsers(); // Gọi lấy danh sách user khi trang load
+                });
 
             </script>
         </body>

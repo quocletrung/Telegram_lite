@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.telegram_lite.entity.Message;
 import com.telegram_lite.service.MessageService;
+import com.telegram_lite.dto.MessageDto;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -17,6 +18,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.stream.Collectors;
 
 
 @WebServlet("/chatHistory")
@@ -91,18 +93,20 @@ public class ChatHistoryServlet extends HttpServlet {
         }
 
         List<Message> chatHistory = messageService.getChatHistory(loggedInUsername, partnerUsername, page, pageSize);
-
-        // Chuyển đổi danh sách Message thành một định dạng phù hợp hơn cho client nếu cần
-        // Ví dụ: chỉ gửi các trường cần thiết, định dạng lại timestamp
-        // Hiện tại, objectMapper sẽ serialize toàn bộ đối tượng Message (có thể bao gồm cả đối tượng User lồng nhau)
-        // Điều này có thể không tối ưu và có thể lộ thông tin không cần thiết.
-        // Nên tạo DTOs (Data Transfer Objects) cho việc này.
-        // Tạm thời, chúng ta sẽ serialize trực tiếp.
+        List<MessageDto> chatHistoryDto = chatHistory.stream().map(msg -> new MessageDto(
+            msg.getId(),
+            msg.getSender() != null ? msg.getSender().getUsername() : null,
+            msg.getReceiver() != null ? msg.getReceiver().getUsername() : null,
+            msg.getContent(),
+            msg.getMessageType().toString(),
+            msg.getMediaUrl(),
+            msg.getTimestamp()
+        )).collect(Collectors.toList());
 
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
         try {
-            response.getWriter().write(objectMapper.writeValueAsString(chatHistory));
+            response.getWriter().write(objectMapper.writeValueAsString(chatHistoryDto));
         } catch (Exception e) {
             e.printStackTrace();
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);

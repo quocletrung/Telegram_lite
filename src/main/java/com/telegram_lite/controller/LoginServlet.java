@@ -1,7 +1,10 @@
 package com.telegram_lite.controller;
 
+import com.telegram_lite.dao.UserDaoImpl;
 import com.telegram_lite.entity.User;
 import com.telegram_lite.service.UserService;
+import com.telegram_lite.entity.UserStatus;
+import com.telegram_lite.dao.UserDao;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -17,11 +20,13 @@ import java.util.Optional;
 public class LoginServlet extends HttpServlet {
 
     private UserService userService;
+    private UserDao userDao;
 
     @Override
     public void init() throws ServletException {
         super.init();
         userService = new UserService();
+        userDao = new UserDaoImpl();
     }
 
     /**
@@ -60,6 +65,8 @@ public class LoginServlet extends HttpServlet {
         if (userOptional.isPresent()) {
             // Đăng nhập thành công
             User user = userOptional.get();
+            user.setStatus(UserStatus.ONLINE);
+            userDao.updateUser(user);
 
             // Tạo hoặc lấy HttpSession hiện tại
             HttpSession session = request.getSession(true); // true: tạo session mới nếu chưa có
