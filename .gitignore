@@ -36,3 +36,7 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Ignore the uploads directory where user media files are stored
+src/main/webapp/uploads/
+src/main/webapp/uploads/*
