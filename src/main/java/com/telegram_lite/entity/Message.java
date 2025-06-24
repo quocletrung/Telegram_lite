@@ -4,6 +4,8 @@ import javax.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
 
 @Entity
 @Table(name = "messages")
@@ -18,7 +20,7 @@ public class Message {
     private User sender;
 
     @ManyToOne
-    @JoinColumn(name = "receiver_id", nullable = false)
+    @JoinColumn(name = "receiver_id", nullable = true) // << THAY ĐỔI: nullable = true
     private User receiver;
 
     @Enumerated(EnumType.STRING) // Lưu trữ Enum dưới dạng String trong DB
@@ -38,25 +40,28 @@ public class Message {
     @Column(name = "is_read", nullable = false)
     private boolean isRead = false;
 
+    @ManyToOne
+    @JoinColumn(name = "group_id", nullable = true)
+    private ChatGroup receiverGroup;
     // Constructors
     public Message() {
     }
 
-    // Constructor cho tin nhắn văn bản
-    public Message(User sender, User receiver, String content) {
-        this.sender = sender;
-        this.receiver = receiver;
-        this.content = content;
-        this.messageType = MessageType.TEXT; // Mặc định là TEXT nếu chỉ có content
-    }
-
-    // Constructor cho tin nhắn media
     public Message(User sender, User receiver, MessageType messageType, String mediaUrl, String content) {
         this.sender = sender;
         this.receiver = receiver;
         this.messageType = messageType;
         this.mediaUrl = mediaUrl;
-        this.content = content; // Content có thể là caption
+        this.content = content;
+    }
+
+    // >>> THÊM CONSTRUCTOR MỚI CHO TIN NHẮN NHÓM <<<
+    public Message(User sender, ChatGroup receiverGroup, MessageType messageType, String content, String mediaUrl) {
+        this.sender = sender;
+        this.receiverGroup = receiverGroup;
+        this.messageType = messageType;
+        this.content = content;
+        this.mediaUrl = mediaUrl;
     }
 
 
@@ -115,6 +120,14 @@ public class Message {
 
     public void setTimestamp(LocalDateTime timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public ChatGroup getReceiverGroup() {
+        return receiverGroup;
+    }
+
+    public void setReceiverGroup(ChatGroup receiverGroup) {
+        this.receiverGroup = receiverGroup;
     }
 
     public boolean isRead() {

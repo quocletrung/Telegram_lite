@@ -19,6 +19,9 @@
         <property name="hibernate.current_session_context_class">thread</property>
 
         <mapping class="com.telegram_lite.entity.User"/>
+        <mapping class="com.telegram_lite.entity.ChatGroup"/>
+        <mapping class="com.telegram_lite.entity.Message"/>
+
 
         
 

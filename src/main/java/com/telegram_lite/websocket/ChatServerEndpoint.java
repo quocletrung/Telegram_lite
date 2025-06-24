@@ -1,232 +1,183 @@
 package com.telegram_lite.websocket;
 
-import com.telegram_lite.entity.Message; // Import Message entity
-import com.telegram_lite.entity.MessageType; // Import MessageType enum
-import com.telegram_lite.entity.User; // Import User entity
-import com.telegram_lite.service.MessageService; // Import MessageService
-import com.telegram_lite.service.UserService; // Import UserService (nếu cần lấy User object từ username)
+import com.google.gson.Gson;
+import com.telegram_lite.entity.ChatGroup;
+import com.telegram_lite.entity.Message;
+import com.telegram_lite.entity.MessageType;
+import com.telegram_lite.entity.User;
+import com.telegram_lite.service.GroupChatService;
+import com.telegram_lite.service.MessageService;
 
 import jakarta.websocket.*;
-import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
-
-// Thư viện JSON, ví dụ Jackson (cần thêm dependency vào pom.xml nếu chưa có)
-// Hoặc bạn có thể parse/tạo JSON thủ công cho đơn giản ban đầu
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-
-
 import java.io.IOException;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-@ServerEndpoint("/chat/{username}")
+@ServerEndpoint(value = "/chat")
 public class ChatServerEndpoint {
 
-    private static Map<String, Session> activeSessions = new ConcurrentHashMap<>();
-    private static Set<String> usernames = Collections.synchronizedSet(new HashSet<>());
-
-    // Khởi tạo MessageService và UserService
-    // Trong ứng dụng thực tế, bạn có thể muốn inject chúng (ví dụ qua CDI nếu dùng Java EE đầy đủ)
-    private static MessageService messageService = new MessageService();
-    // private static UserService userService = new UserService(); // Nếu cần lấy đối tượng User
-
-    // ObjectMapper để xử lý JSON (nên là static và khởi tạo một lần)
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
-    static {
-        // Đăng ký module để ObjectMapper có thể serialize/deserialize Java 8 Time (LocalDateTime)
-        objectMapper.registerModule(new JavaTimeModule());
-        // Cấu hình định dạng ngày giờ nếu cần, ví dụ:
-        // objectMapper.setDateFormat(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS"));
-    }
-
+    private static final Map<String, Session> activeSessions = new ConcurrentHashMap<>();
+    private final MessageService messageService = new MessageService();
+    // <<< BƯỚC 4: THÊM GROUP CHAT SERVICE >>>
+    private final GroupChatService groupChatService = new GroupChatService();
+    private final Gson gson = new Gson();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("username") String username) {
-        // ... (giữ nguyên logic onOpen, nhưng có thể không cần broadcast join message nếu client tự xử lý)
-        // Thay vào đó, khi client kết nối, nó có thể yêu cầu lịch sử chat với người dùng cụ thể
-        if (username == null || username.trim().isEmpty()) {
-            // ... (xử lý lỗi như cũ)
-            return;
-        }
-        if (activeSessions.containsKey(username)) {
-            // ... (xử lý lỗi như cũ)
-            return;
-        }
-
-        session.getUserProperties().put("username", username);
+    public void onOpen(Session session) {
+        String username = session.getQueryString().split("=")[1];
         activeSessions.put(username, session);
-        usernames.add(username);
-
-        System.out.println("User: " + username + " connected. Session ID: " + session.getId());
-        // Thông báo cho client này biết kết nối thành công
-        try {
-            Map<String, Object> connectionSuccessMsg = new HashMap<>();
-            connectionSuccessMsg.put("type", "connection_ack");
-            connectionSuccessMsg.put("message", "Successfully connected as " + username);
-            session.getBasicRemote().sendText(objectMapper.writeValueAsString(connectionSuccessMsg));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        broadcastUserList(); // Vẫn gửi danh sách người dùng online
+        System.out.println("User " + username + " connected");
     }
 
-    /**
-     * Client sẽ gửi tin nhắn dưới dạng JSON.
-     * Ví dụ:
-     * Cho TEXT: {"to": "receiverUsername", "type": "TEXT", "content": "Hello!"}
-     * Cho IMAGE: {"to": "receiverUsername", "type": "IMAGE", "url": "/uploads/image.jpg", "caption": "My photo"}
-     */
     @OnMessage
     public void onMessage(String jsonMessage, Session session) {
-        String senderUsername = (String) session.getUserProperties().get("username");
-        if (senderUsername == null) return;
+        // Lấy username của người gửi từ session hiện tại
+        String senderUsername = null;
+        for (Map.Entry<String, Session> entry : activeSessions.entrySet()) {
+            if (entry.getValue().equals(session)) {
+                senderUsername = entry.getKey();
+                break;
+            }
+        }
 
+        if (senderUsername == null) {
+            System.err.println("Không tìm thấy username cho session: " + session.getId());
+            return;
+        }
+
+        // Decode tin nhắn JSON
+        Map<String, String> messageMap = gson.fromJson(jsonMessage, Map.class);
+        String chatType = messageMap.getOrDefault("chatType", "private"); // Mặc định là private nếu không có
+        String target = messageMap.get("to");
+        String content = messageMap.get("content");
+        MessageType messageType = MessageType.valueOf(messageMap.getOrDefault("messageType", "TEXT").toUpperCase());
+        String mediaUrl = messageMap.get("mediaUrl");
+
+        // <<< BƯỚC 4: LOGIC ĐIỀU PHỐI TIN NHẮN >>>
+        if ("group".equalsIgnoreCase(chatType)) {
+            handleGroupMessage(senderUsername, target, content, messageType, mediaUrl);
+        } else {
+            handlePrivateMessage(senderUsername, target, content, messageType, mediaUrl);
+        }
+    }
+
+    // <<< BƯỚC 4: PHƯƠNG THỨC MỚI ĐỂ XỬ LÝ TIN NHẮN NHÓM >>>
+    private void handleGroupMessage(String senderUsername, String groupIdStr, String content, MessageType messageType, String mediaUrl) {
+        Long groupId;
         try {
-            // Parse JSON message từ client
-            // Tạo một class DTO (Data Transfer Object) cho ClientMessage sẽ tốt hơn
-            // Ví dụ: ClientMessageDto clientMsg = objectMapper.readValue(jsonMessage, ClientMessageDto.class);
-            // Tạm thời parse thủ công hoặc dùng Map
-            Map<String, String> clientMsg = objectMapper.readValue(jsonMessage, Map.class);
+            groupId = Long.parseLong(groupIdStr);
+        } catch (NumberFormatException e) {
+            System.err.println("Invalid Group ID format: " + groupIdStr);
+            return;
+        }
 
-            String receiverUsername = clientMsg.get("to");
-            String messageTypeStr = clientMsg.get("messageType"); // TEXT, IMAGE, VIDEO
-            String content = clientMsg.get("content");       // Nội dung text hoặc caption
-            String mediaUrl = clientMsg.get("mediaUrl");       // URL của media nếu có
+        // 1. Lưu tin nhắn vào database
+        Optional<Message> savedMessageOpt = groupChatService.saveGroupMessage(senderUsername, groupId, content, messageType, mediaUrl);
 
-            if (receiverUsername == null || messageTypeStr == null) {
-                System.err.println("Invalid message format from " + senderUsername + ": " + jsonMessage);
-                sendErrorMessage(session, "Invalid message format. 'to' and 'messageType' are required.");
-                return;
-            }
+        if (savedMessageOpt.isEmpty()) {
+            System.err.println("Không thể lưu tin nhắn cho nhóm: " + groupId);
+            return;
+        }
 
-            MessageType messageType = MessageType.valueOf(messageTypeStr.toUpperCase());
+        // 2. Lấy thông tin nhóm để biết ai là thành viên
+        Optional<ChatGroup> groupOpt = groupChatService.findGroupById(groupId);
+        if (groupOpt.isEmpty()) {
+            return;
+        }
 
-            // 1. Lưu tin nhắn vào database
-            Optional<Message> savedMessageOpt = messageService.createAndSaveMessage(
-                    senderUsername, receiverUsername, messageType, content, mediaUrl
-            );
+        // 3. Gửi tin nhắn đến tất cả thành viên đang online trong nhóm
+        ChatGroup group = groupOpt.get();
+        String outgoingJson = buildJsonResponse(savedMessageOpt.get());
 
-            if (savedMessageOpt.isEmpty()) {
-                System.err.println("Failed to save message from " + senderUsername + " to " + receiverUsername);
-                sendErrorMessage(session, "Failed to send message. Please try again.");
-                return;
-            }
-
-            Message savedMessage = savedMessageOpt.get();
-
-            // 2. Tạo đối tượng JSON để gửi cho client (sender và receiver)
-            // Đối tượng này nên chứa đầy đủ thông tin để client hiển thị
-            Map<String, Object> outgoingMessage = new HashMap<>();
-            outgoingMessage.put("type", "newMessage"); // Để client biết đây là tin nhắn mới
-            outgoingMessage.put("id", savedMessage.getId());
-            outgoingMessage.put("from", senderUsername);
-            outgoingMessage.put("to", receiverUsername);
-            outgoingMessage.put("messageType", savedMessage.getMessageType().toString());
-            outgoingMessage.put("content", savedMessage.getContent());
-            outgoingMessage.put("mediaUrl", savedMessage.getMediaUrl());
-            outgoingMessage.put("timestamp", savedMessage.getTimestamp().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)); // Định dạng timestamp
-            // outgoingMessage.put("isRead", savedMessage.isRead()); // Có thể gửi sau
-
-            String outgoingJsonMessage = objectMapper.writeValueAsString(outgoingMessage);
-
-            // 3. Gửi tin nhắn đến người nhận (nếu online)
-            Session receiverSession = activeSessions.get(receiverUsername);
-            if (receiverSession != null && receiverSession.isOpen()) {
+        for (User member : group.getMembers()) {
+            Session memberSession = activeSessions.get(member.getUsername());
+            // Kiểm tra xem thành viên có đang online không
+            if (memberSession != null && memberSession.isOpen()) {
                 try {
-                    receiverSession.getBasicRemote().sendText(outgoingJsonMessage);
+                    memberSession.getBasicRemote().sendText(outgoingJson);
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    System.err.println("Lỗi khi gửi tin nhắn đến thành viên " + member.getUsername() + ": " + e.getMessage());
                 }
-            } else {
-                System.out.println("User " + receiverUsername + " is offline. Message saved.");
-                // Logic xử lý thông báo offline hoặc unread count có thể thêm ở đây
             }
+        }
+    }
 
-            // 4. Gửi lại tin nhắn (hoặc một thông báo xác nhận) cho người gửi
-            // Điều này giúp client của người gửi biết tin nhắn đã được xử lý và có ID, timestamp
+    // <<< BƯỚC 4: TÁCH LOGIC XỬ LÝ TIN NHẮN RIÊNG TƯ RA PHƯƠNG THỨC RIÊNG >>>
+    private void handlePrivateMessage(String senderUsername, String receiverUsername, String content, MessageType messageType, String mediaUrl) {
+        // 1. Lưu tin nhắn vào database bằng cách gọi đúng phương thức từ MessageService
+        // --- ĐÂY LÀ DÒNG ĐÃ SỬA ---
+        Optional<Message> savedMessageOpt = messageService.createAndSaveMessage(senderUsername, receiverUsername, messageType, content, mediaUrl);
+        // -------------------------
+
+        if (savedMessageOpt.isEmpty()) {
+            System.err.println("Không thể lưu tin nhắn từ " + senderUsername + " đến " + receiverUsername);
+            return;
+        }
+
+        // 2. Lấy session của người nhận
+        Session receiverSession = activeSessions.get(receiverUsername);
+        String outgoingJson = buildJsonResponse(savedMessageOpt.get());
+
+        // 3. Gửi tin nhắn đến người nhận nếu họ online
+        if (receiverSession != null && receiverSession.isOpen()) {
             try {
-                Map<String, Object> ackMessage = new HashMap<>(outgoingMessage); // Copy nội dung
-                ackMessage.put("type", "messageSentAck"); // Loại tin nhắn khác để client tự xử lý
-                session.getBasicRemote().sendText(objectMapper.writeValueAsString(ackMessage));
+                receiverSession.getBasicRemote().sendText(outgoingJson);
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        }
 
-        } catch (JsonProcessingException e) {
-            System.err.println("Error parsing JSON message from " + senderUsername + ": " + jsonMessage);
-            e.printStackTrace();
-            sendErrorMessage(session, "Invalid JSON format.");
-        } catch (IllegalArgumentException e) {
-            System.err.println("Invalid message type from " + senderUsername + ": " + jsonMessage);
-            e.printStackTrace();
-            sendErrorMessage(session, "Invalid message type.");
+        // 4. Gửi lại tin nhắn cho chính người gửi để xác nhận (và cập nhật UI)
+        Session senderSession = activeSessions.get(senderUsername);
+        if(senderSession != null && senderSession.isOpen()){
+            try {
+                senderSession.getBasicRemote().sendText(outgoingJson);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
-
-    private void sendErrorMessage(Session session, String errorMessageContent) {
-        try {
-            Map<String, Object> errorMsgMap = new HashMap<>();
-            errorMsgMap.put("type", "error");
-            errorMsgMap.put("message", errorMessageContent);
-            session.getBasicRemote().sendText(objectMapper.writeValueAsString(errorMsgMap));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
 
     @OnClose
-    public void onClose(Session session, CloseReason closeReason) {
-        // ... (logic onClose có thể cần cập nhật để không broadcast join/leave message
-        // cho tất cả mọi người nếu chúng ta chuyển sang UI tập trung vào 1-1)
-        // Hoặc vẫn giữ để biết ai online/offline.
-        String username = (String) session.getUserProperties().get("username");
-        if (username != null) {
-            activeSessions.remove(username);
-            usernames.remove(username);
-            System.out.println("User: " + username + " disconnected. Reason: " + closeReason.getReasonPhrase());
-            // Có thể không cần broadcast join/leave dạng text nữa nếu client xử lý userlist
-            broadcastUserList();
-        } else {
-            // ... (xử lý cũ)
-        }
+    public void onClose(Session session) {
+        activeSessions.values().remove(session);
+        // Có thể thêm logic để thông báo user offline
     }
 
     @OnError
     public void onError(Session session, Throwable throwable) {
-        // ... (giữ nguyên logic onError)
-        String username = (String) session.getUserProperties().get("username");
-        System.err.println("Error for user: " + (username != null ? username : "Unknown") + ", Session ID: " + session.getId());
+        // Xử lý lỗi
         throwable.printStackTrace();
     }
 
-    // broadcastUserList vẫn hữu ích để client biết ai đang online
-    private static void broadcastUserList() {
-        Map<String, Object> userListUpdate = new HashMap<>();
-        userListUpdate.put("type", "userlist"); // Để client phân biệt
-        userListUpdate.put("users", new ArrayList<>(usernames)); // Gửi danh sách username
+    // <<< BƯỚC 4: PHƯƠNG THỨC TIỆN ÍCH ĐỂ TẠO JSON RESPONSE >>>
+    private String buildJsonResponse(Message message) {
+        // Định dạng thời gian
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-        try {
-            String userListMessage = objectMapper.writeValueAsString(userListUpdate);
-            activeSessions.values().forEach(s -> {
-                synchronized (s) {
-                    if (s.isOpen()) {
-                        try {
-                            s.getBasicRemote().sendText(userListMessage);
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            });
-        } catch (JsonProcessingException e) {
-            e.printStackTrace();
+        // Tạo một Map để build JSON
+        Map<String, Object> responseMap = new ConcurrentHashMap<>();
+        responseMap.put("id", message.getId());
+        responseMap.put("content", message.getContent());
+        responseMap.put("sender", message.getSender().getUsername());
+        responseMap.put("timestamp", message.getTimestamp().format(formatter));
+        responseMap.put("messageType", message.getMessageType().toString());
+        responseMap.put("mediaUrl", message.getMediaUrl());
+
+        if (message.getReceiverGroup() != null) {
+            // Đây là tin nhắn nhóm
+            responseMap.put("chatType", "group");
+            responseMap.put("groupId", message.getReceiverGroup().getId());
+            responseMap.put("groupName", message.getReceiverGroup().getGroupName());
+        } else {
+            // Đây là tin nhắn riêng tư
+            responseMap.put("chatType", "private");
+            responseMap.put("receiver", message.getReceiver().getUsername());
         }
-    }
 
-    // Không cần hàm broadcast(String message) cũ nữa nếu mọi tin nhắn đều là JSON và có định tuyến
+        return gson.toJson(responseMap);
+    }
 }

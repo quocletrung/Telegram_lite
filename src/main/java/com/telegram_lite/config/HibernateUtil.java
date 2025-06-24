@@ -16,6 +16,7 @@ public class HibernateUtil {
 
             configuration.addAnnotatedClass(com.telegram_lite.entity.User.class);
             configuration.addAnnotatedClass(com.telegram_lite.entity.Message.class);
+            configuration.addAnnotatedClass(com.telegram_lite.entity.ChatGroup.class); // << THÊM DÒNG NÀY
 
             // Hibernate 5.x trở lên yêu cầu ServiceRegistry
             // Chúng ta sẽ đăng ký các Entity ở đây sau khi tạo chúng

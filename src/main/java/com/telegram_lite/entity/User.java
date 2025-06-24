@@ -44,6 +44,17 @@ public class User {
     @UpdateTimestamp // Tự động gán thời gian khi cập nhật
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+    @ManyToMany(mappedBy = "members")
+    private Set<ChatGroup> groups = new HashSet<>();
+
+    // Thêm getter và setter cho `groups`
+    public Set<ChatGroup> getGroups() {
+        return groups;
+    }
+
+    public void setGroups(Set<ChatGroup> groups) {
+        this.groups = groups;
+    }
 
     // Constructors
     public User() {

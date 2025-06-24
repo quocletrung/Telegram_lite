@@ -28,6 +28,19 @@ public class MessageDaoImpl implements MessageDao {
             return null; // Hoặc ném ra một ngoại lệ tùy chỉnh
         }
     }
+    @Override
+    public List<Message> getMessagesForGroup(Long groupId) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Query<Message> query = session.createQuery(
+                    "FROM Message WHERE receiverGroup.id = :groupId ORDER BY timestamp ASC", Message.class
+            );
+            query.setParameter("groupId", groupId);
+            return query.getResultList();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return List.of(); // Trả về danh sách rỗng nếu có lỗi
+        }
+    }
 
     @Override
     public List<Message> getMessagesBetweenUsers(User user1, User user2, int limit, int offset) {
